@@ -1,0 +1,44 @@
+use bevy::prelude::*;
+
+#[derive(Component)]
+pub struct Hero;
+
+#[derive(Component)]
+pub struct Enemy;
+
+#[derive(Component)]
+pub struct Projectile {
+    pub damage: f32,
+    pub speed: f32,
+}
+
+#[derive(Component)]
+pub struct Velocity {
+    pub value: Vec2,
+}
+
+#[derive(Component)]
+pub struct MoveTarget {
+    pub position: Vec2,
+}
+
+#[derive(Component)]
+pub struct Health {
+    pub current: f32,
+    pub max: f32,
+}
+
+impl Health {
+    pub fn new(max: f32) -> Self {
+        Self { current: max, max }
+    }
+}
+
+#[derive(Component)]
+pub struct Rocket {
+    pub initial_speed: f32,
+    pub max_speed: f32,
+    pub acceleration_rate: f32,
+    pub current_speed: f32,
+    pub direction: Vec2,
+}
