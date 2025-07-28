@@ -4,6 +4,16 @@ use bevy::prelude::*;
 pub struct Hero;
 
 #[derive(Component)]
+pub struct AttackTarget {
+    pub entity: Entity,
+}
+
+#[derive(Component)]
+pub struct TargetIndicator {
+    pub target: Entity,
+}
+
+#[derive(Component)]
 pub struct Enemy;
 
 #[derive(Component)]
@@ -41,4 +51,11 @@ pub struct Rocket {
     pub acceleration_rate: f32,
     pub current_speed: f32,
     pub direction: Vec2,
+}
+
+#[derive(Component)]
+pub struct TankShell {
+    pub velocity: Vec2,
+    pub spawn_position: Vec2,
+    pub max_range: f32,
 }
