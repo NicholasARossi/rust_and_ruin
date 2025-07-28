@@ -59,3 +59,8 @@ pub struct TankShell {
     pub spawn_position: Vec2,
     pub max_range: f32,
 }
+
+#[derive(Component)]
+pub struct HitFlash {
+    pub timer: Timer,
+}

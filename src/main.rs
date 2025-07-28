@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::*;
+use bevy_rapier3d::prelude::*;
 
 mod camera;
 mod components;
@@ -23,7 +23,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         // .add_plugins(RapierDebugRenderPlugin::default())
         .init_resource::<GameState>()
         .init_resource::<MouseWorldPosition>()
@@ -43,6 +43,7 @@ fn main() {
             projectile_lifetime_system,
             tank_shell_lifetime_system,
             collision_detection_system,
+            hit_flash_system,
         ))
         .run();
 }
@@ -55,7 +56,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    rapier_config.gravity = Vec2::ZERO;
+    rapier_config.gravity = Vec3::ZERO;
     
     camera::setup_orthographic_camera(&mut commands);
     
@@ -130,11 +131,15 @@ fn setup(
         PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Cube { size: 1.5 })),
             material: materials.add(Color::rgb(1.0, 0.0, 0.0).into()),
-            transform: Transform::from_xyz(4.0, 0.75, 0.0),
+            transform: Transform::from_xyz(4.0, 0.75, 0.0),  // Positioned at proper height
             ..default()
         },
-        RigidBody::Fixed,
-        Collider::cuboid(0.75, 0.75),
+        RigidBody::Dynamic,
+        Collider::cuboid(0.75, 0.75, 0.75),  // 3D cube collider
+        ColliderMassProperties::Density(5.0),  // Heavy enemy
+        LockedAxes::ROTATION_LOCKED | LockedAxes::TRANSLATION_LOCKED_Y,  // Keep upright and on ground
+        Damping { linear_damping: 2.0, angular_damping: 1.0 },  // Quick stop after impact
+        ExternalImpulse::default(),
     ));
     
     info!("Spawned 3D mech and enemy");

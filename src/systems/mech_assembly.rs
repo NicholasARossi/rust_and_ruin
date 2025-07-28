@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use crate::mech::*;
 use crate::rendering::*;
-use bevy_rapier2d::prelude::*;
+use bevy_rapier3d::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Team {
@@ -123,7 +123,7 @@ pub fn spawn_mech_with_visuals(
                 ..default()
             },
             RigidBody::Dynamic,
-            Collider::cuboid(0.3, 0.4),
+            Collider::cuboid(0.3, 0.4, 0.5),  // 3D collider
         ))
         .id();
 

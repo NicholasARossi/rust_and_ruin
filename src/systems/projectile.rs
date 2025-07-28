@@ -1,6 +1,6 @@
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::*;
-use crate::components::{Hero, Enemy, Projectile, Rocket, TankShell, AttackTarget, Health};
+use bevy_rapier3d::prelude::*;
+use crate::components::{Hero, Enemy, Projectile, Rocket, TankShell, AttackTarget};
 use crate::resources::MouseWorldPosition;
 use crate::rendering;
 use crate::mech::{MechUpperPart, TurretCannon, CannonBarrel, TurretRotation};
@@ -10,7 +10,7 @@ use crate::systems::turret_control::shortest_angle_difference;
 const ROCKET_INITIAL_SPEED: f32 = 0.5;
 const ROCKET_MAX_SPEED: f32 = 8.0;
 const ROCKET_ACCELERATION_RATE: f32 = 2.5;
-const TANK_SHELL_SPEED: f32 = 8.0;  // Reduced from 20.0 for better visibility
+const TANK_SHELL_SPEED: f32 = 15.0;  // Fast, impactful shells
 const TANK_SHELL_RANGE: f32 = 15.0;
 const ATTACK_RANGE: f32 = 10.0;  // Increased from 5.0 for easier testing
 const ANGLE_TOLERANCE: f32 = 5.0; // degrees
@@ -77,8 +77,8 @@ pub fn spawn_projectile_system(
                     RigidBody::Dynamic,
                     Collider::ball(0.1),
                     Velocity {
-                        linvel: initial_velocity,
-                        angvel: 0.0,
+                        linvel: Vec3::new(initial_velocity.x, 0.0, initial_velocity.y),
+                        angvel: Vec3::ZERO,
                     },
                 ));
             } else {
@@ -111,7 +111,7 @@ pub fn rocket_acceleration_system(
             rocket.current_speed *= 1.0 + (rocket.acceleration_rate * time.delta_seconds());
             rocket.current_speed = rocket.current_speed.min(rocket.max_speed);
             
-            velocity.linvel = rocket.direction * rocket.current_speed;
+            velocity.linvel = Vec3::new(rocket.direction.x * rocket.current_speed, 0.0, rocket.direction.y * rocket.current_speed);
         }
     }
 }
@@ -169,11 +169,22 @@ pub fn auto_fire_system(
                                 PbrBundle {
                                     mesh: shell_mesh,
                                     material: shell_material,
-                                    transform: Transform::from_xyz(projectile_spawn_pos.x, 0.75, projectile_spawn_pos.y),  // Same Y as enemy for 2D physics
+                                    transform: Transform::from_xyz(projectile_spawn_pos.x, 0.75, projectile_spawn_pos.y),  // Y=0.75 for 3D physics at enemy height
                                     ..default()
                                 },
-                                RigidBody::KinematicPositionBased,  // Use kinematic to control position manually
+                                RigidBody::Dynamic,
                                 Collider::ball(0.2),  // Increased from 0.05 for better collision detection
+                                ColliderMassProperties::Density(10.0),  // Heavy shells
+                                Restitution::coefficient(0.4),  // Some bounce
+                                Friction::coefficient(0.3),
+                                Ccd::enabled(),  // Continuous collision detection for fast projectiles
+                                Velocity {
+                                    linvel: Vec3::new(shell_velocity.x, 0.0, shell_velocity.y),  // Convert 2D velocity to 3D
+                                    angvel: Vec3::ZERO,
+                                },
+                                ExternalImpulse::default(),
+                                GravityScale(0.3),  // Slight gravity for realistic arc
+                                ActiveEvents::COLLISION_EVENTS
                             ));
                             
                             info!("Tank shell spawned at 3D pos ({}, {}, {}) with velocity {:?}", 
@@ -189,41 +200,14 @@ pub fn auto_fire_system(
 }
 
 pub fn tank_shell_movement_system(
-    time: Res<Time>,
-    mut commands: Commands,
-    mut projectile_query: Query<(Entity, &mut Transform, &TankShell, &Projectile)>,
-    mut enemy_query: Query<(Entity, &Transform, &mut Health), (With<Enemy>, Without<Projectile>)>,
+    projectile_query: Query<(&Velocity, &TankShell), With<Projectile>>,
 ) {
-    for (projectile_entity, mut projectile_transform, tank_shell, projectile) in projectile_query.iter_mut() {
-        // Update position based on velocity (in X,Z plane)
-        let delta = tank_shell.velocity * time.delta_seconds();
-        projectile_transform.translation.x += delta.x;
-        projectile_transform.translation.z += delta.y;  // velocity.y represents Z direction
-        
-        // Manual collision detection
-        let projectile_pos = Vec2::new(projectile_transform.translation.x, projectile_transform.translation.z);
-        
-        for (enemy_entity, enemy_transform, mut enemy_health) in enemy_query.iter_mut() {
-            let enemy_pos = Vec2::new(enemy_transform.translation.x, enemy_transform.translation.z);
-            let distance = projectile_pos.distance(enemy_pos);
-            
-            // Check if projectile hits enemy (0.2 projectile radius + 0.75 enemy half-size)
-            if distance < 0.95 {
-                // Hit!
-                enemy_health.current -= projectile.damage;
-                info!("Enemy hit! Damage: {}, Health: {}/{}", projectile.damage, enemy_health.current, enemy_health.max);
-                
-                // Despawn projectile
-                commands.entity(projectile_entity).despawn();
-                
-                // Check if enemy is dead
-                if enemy_health.current <= 0.0 {
-                    commands.entity(enemy_entity).despawn();
-                    info!("Enemy destroyed!");
-                }
-                
-                break; // Projectile can only hit one enemy
-            }
+    // Physics are now handled by Rapier2D
+    // This system just monitors shell velocity for effects
+    for (velocity, _tank_shell) in projectile_query.iter() {
+        let speed = velocity.linvel.length();
+        if speed < 1.0 {
+            // Shell is nearly stopped, could add effects here
         }
     }
 }

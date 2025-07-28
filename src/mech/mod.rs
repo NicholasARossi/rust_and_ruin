@@ -53,7 +53,7 @@ pub struct TurretCannon {
 impl Default for TurretCannon {
     fn default() -> Self {
         Self {
-            fire_rate: 0.2,  // Reduced from 1.0 for faster firing
+            fire_rate: 1.5,  // Slower, more impactful shots
             projectile_damage: 25.0,
             rotation_speed: 120.0,
             barrel_length: 0.5,
