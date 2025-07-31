@@ -164,6 +164,7 @@ fn main() {
             input::click_to_move_system,
             input::enemy_selection_system,
             input::update_target_indicator_system,
+            tank_movement::tank_movement_system,
             movement::movement_system,
             turret_control::turret_control_system,
             projectile::auto_fire_system,
@@ -222,8 +223,11 @@ fn setup(
         0.0,
     );
     
-    // Add Hero component to mech
-    commands.entity(mech_entity).insert(Hero);
+    // Add Hero and TankMovement components to mech
+    commands.entity(mech_entity).insert((
+        Hero,
+        TankMovement::default(),
+    ));
     
     // Add ground plane for shells to bounce on
     commands.spawn((
@@ -293,19 +297,27 @@ fn setup(
 }
 
 fn debug_info_system(
-    hero_query: Query<(&Transform, Option<&AttackTarget>), With<Hero>>,
+    hero_query: Query<(&Transform, Option<&AttackTarget>, Option<&TankMovement>), With<Hero>>,
     turret_query: Query<(&Transform, &TurretRotation, &Parent), With<TurretCannon>>,
     enemy_query: Query<&Transform, With<Enemy>>,
     mut text_query: Query<&mut Text>,
     zoom_level: Res<ZoomLevel>,
 ) {
-    if let Ok((hero_transform, attack_target)) = hero_query.get_single() {
+    if let Ok((hero_transform, attack_target, tank_movement)) = hero_query.get_single() {
         if let Ok(mut text) = text_query.get_single_mut() {
             let mut status = String::from("Press Q near enemy to lock turret\nLeft click to move tank\nMouse wheel or -/= or [/] to zoom\n\n");
             
             status.push_str(&format!("Tank Position: ({:.1}, {:.1})\n", 
                 hero_transform.translation.x, 
                 hero_transform.translation.z));
+            
+            // Add tank movement state info
+            if let Some(tank_movement) = tank_movement {
+                status.push_str(&format!("Tank State: {:?}, Speed: {:.1}/{:.1}\n", 
+                    tank_movement.rotation_state,
+                    tank_movement.current_speed,
+                    tank_movement.max_speed));
+            }
             
             status.push_str(&format!("Zoom Level: {:.2} (Min: {:.2}, Max: {:.2})\n", 
                 zoom_level.current, 
@@ -323,7 +335,7 @@ fn debug_info_system(
                 
                 // Find turret info
                 for (turret_transform, turret_rotation, parent) in turret_query.iter() {
-                    if let Ok((parent_transform, _)) = hero_query.get(parent.get()) {
+                    if let Ok((parent_transform, _, _)) = hero_query.get(parent.get()) {
                         status.push_str(&format!("Turret Angle: {:.1}° (Target: {:.1}°)\n",
                             turret_rotation.current_angle,
                             turret_rotation.target_angle));

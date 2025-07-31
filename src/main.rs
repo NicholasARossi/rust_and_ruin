@@ -37,6 +37,7 @@ fn main() {
             turret_control_system,
             // spawn_projectile_system, // Disabled - using auto_fire_system instead
             auto_fire_system,
+            tank_movement_system,
             movement_system,
             rocket_acceleration_system,
             tank_shell_movement_system,  // Update tank shell positions
@@ -71,6 +72,7 @@ fn setup(
     // Spawn hero mech with 3D shapes
     let hero_entity = commands.spawn((
         Hero,
+        TankMovement::default(),
         SpatialBundle {
             transform: Transform::from_xyz(-4.0, 0.0, 0.0),
             ..default()
