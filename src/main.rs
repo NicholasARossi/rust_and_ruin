@@ -86,6 +86,10 @@ fn setup(
             transform: Transform::from_xyz(0.0, 0.25, 0.0),
             ..default()
         },
+        // Add physics components for the tank
+        RigidBody::Dynamic,
+        Collider::cuboid(0.75, 0.25, 1.0), // Half of box size
+        LockedAxes::ROTATION_LOCKED_X | LockedAxes::ROTATION_LOCKED_Z, // Only allow Y rotation
     )).id();
     
     // Turret base (cylinder)
@@ -121,7 +125,8 @@ fn setup(
     )).id();
     
     // Set up hierarchy
-    commands.entity(hero_entity).push_children(&[tank_base, turret_base]);
+    commands.entity(hero_entity).push_children(&[tank_base]);
+    commands.entity(tank_base).push_children(&[turret_base]);
     commands.entity(turret_base).push_children(&[cannon]);
     
     // Spawn enemy

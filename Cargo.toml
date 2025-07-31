@@ -7,6 +7,10 @@ description = "A 2D Mech Hero RTS game with real projectile physics"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 
+[[example]]
+name = "turret_lock_demo"
+path = "examples/turret_lock_demo.rs"
+
 [dependencies]
 # Using Bevy without problematic features
 bevy = { version = "0.12", default-features = false, features = [
@@ -23,6 +27,7 @@ bevy = { version = "0.12", default-features = false, features = [
     "bevy_animation",
     "bevy_gizmos",
     "png",
+    "jpeg",
     "x11",
 ] }
 bevy_rapier3d = "0.23"

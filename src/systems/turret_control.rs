@@ -45,41 +45,48 @@ pub fn rotate_towards_angle(
 
 pub fn turret_control_system(
     mut set: ParamSet<(
-        Query<(&mut Transform, &mut TurretRotation, &TurretCannon, &Parent)>,
+        Query<(&mut Transform, &GlobalTransform, &mut TurretRotation, &TurretCannon, &Parent)>,
         Query<(&Transform, Option<&AttackTarget>), Without<TurretRotation>>,
         Query<&Transform, With<Enemy>>,
     )>,
     mouse_position: Res<MouseWorldPosition>,
     time: Res<Time>,
 ) {
-    let mouse_pos = mouse_position.position;
+    let _mouse_pos = mouse_position.position;
     
     // Collect data we need from queries
     let mut turret_data = Vec::new();
-    for (entity_index, (_transform, turret_rotation, turret_cannon, parent)) in set.p0().iter().enumerate() {
+    for (entity_index, (_transform, global_transform, turret_rotation, turret_cannon, parent)) in set.p0().iter().enumerate() {
         turret_data.push((
             entity_index,
             parent.get(),
             turret_rotation.current_angle,
             turret_rotation.target_angle,
             turret_cannon.rotation_speed,
+            Vec2::new(global_transform.translation().x, global_transform.translation().z),
         ));
+    }
+    
+    if turret_data.is_empty() {
+        // No turrets found - might be a timing issue
+        return;
     }
     
     // Process each turret and collect parent data
     let mut parent_data = Vec::new();
-    for (entity_index, parent_entity, current_angle, _, rotation_speed) in &turret_data {
+    for (entity_index, parent_entity, current_angle, _, rotation_speed, turret_position) in &turret_data {
         // Get parent transform and attack target
         if let Ok((transform, attack_target)) = set.p1().get(*parent_entity) {
-            let mech_position = Vec2::new(transform.translation.x, transform.translation.z);
             let attack_entity = attack_target.map(|at| at.entity);
-            parent_data.push((*entity_index, mech_position, attack_entity, *current_angle, *rotation_speed));
+            // Extract the parent's Y rotation (first component in YXZ order)
+            let (parent_y_rotation, _, _) = transform.rotation.to_euler(EulerRot::YXZ);
+            parent_data.push((*entity_index, *turret_position, attack_entity, *current_angle, *rotation_speed, parent_y_rotation));
         }
     }
     
     // Get enemy positions
     let mut enemy_positions = Vec::new();
-    for (entity_index, _mech_position, attack_entity, _current_angle, _rotation_speed) in &parent_data {
+    for (entity_index, _turret_position, attack_entity, _current_angle, _rotation_speed, _parent_rotation) in &parent_data {
         if let Some(enemy_entity) = attack_entity {
             if let Ok(enemy_transform) = set.p2().get(*enemy_entity) {
                 enemy_positions.push((*entity_index, Vec2::new(enemy_transform.translation.x, enemy_transform.translation.z)));
@@ -89,7 +96,7 @@ pub fn turret_control_system(
     
     // Calculate updates
     let mut updates = Vec::new();
-    for (entity_index, mech_position, attack_entity, current_angle, rotation_speed) in parent_data {
+    for (entity_index, turret_position, attack_entity, current_angle, rotation_speed, parent_rotation) in parent_data {
         let (target_position, has_valid_target) = if let Some(_) = attack_entity {
             // Look for enemy position
             if let Some((_, enemy_pos)) = enemy_positions.iter()
@@ -99,23 +106,40 @@ pub fn turret_control_system(
                 // Enemy not found but we have an attack target
                 // Maintain current angle by using a position that results in the current angle
                 let current_rad = current_angle.to_radians();
-                let maintain_pos = mech_position + Vec2::new(current_rad.cos(), current_rad.sin()) * 10.0;
+                let maintain_pos = turret_position + Vec2::new(current_rad.cos(), current_rad.sin()) * 10.0;
                 (maintain_pos, false)
             }
         } else {
-            (mouse_pos, true)
+            // No attack target - maintain current angle
+            let current_rad = current_angle.to_radians();
+            let maintain_pos = turret_position + Vec2::new(current_rad.cos(), current_rad.sin()) * 10.0;
+            (maintain_pos, false)
         };
         
-        let target_angle = calculate_turret_angle(mech_position, target_position);
-        let target_angle_normalized = normalize_angle(target_angle);
+        // Calculate world-space angle to target
+        let world_target_angle = calculate_turret_angle(turret_position, target_position);
+        let world_target_angle_normalized = normalize_angle(world_target_angle);
         
+        
+        // Convert parent rotation from radians to degrees
+        let parent_rotation_degrees = normalize_angle(parent_rotation.to_degrees());
+        
+        // Calculate the local turret angle by subtracting parent's rotation
+        // This converts world-space angle to local-space angle
+        let local_target_angle = normalize_angle(world_target_angle_normalized - parent_rotation_degrees);
+        
+        // Debug logging (commented out to reduce noise)
+        // info!("Turret control: world_angle={:.1}, parent_rot={:.1}, local_angle={:.1}", 
+        //       world_target_angle_normalized, parent_rotation_degrees, local_target_angle);
+        
+        // Current angle is already in local space
         let current_angle_normalized = normalize_angle(current_angle);
         
         // Only rotate if we have a valid target or are following mouse
         let new_angle = if has_valid_target {
             rotate_towards_angle(
                 current_angle_normalized,
-                target_angle_normalized,
+                local_target_angle,
                 rotation_speed,
                 time.delta_seconds(),
             )
@@ -124,12 +148,14 @@ pub fn turret_control_system(
             current_angle_normalized
         };
         
-        updates.push((entity_index, new_angle, target_angle_normalized));
+        // Store the new local angle and world target angle
+        // The world target angle is what we're aiming at in world space
+        updates.push((entity_index, new_angle, world_target_angle_normalized));
     }
     
     // Apply updates
     for (entity_index, new_angle, target_angle) in updates {
-        if let Some((mut transform, mut turret_rotation, _, _)) = set.p0().iter_mut().nth(entity_index) {
+        if let Some((mut transform, _, mut turret_rotation, _, _)) = set.p0().iter_mut().nth(entity_index) {
             turret_rotation.current_angle = new_angle;
             turret_rotation.target_angle = target_angle;
             transform.rotation = Quat::from_rotation_y(new_angle.to_radians());
@@ -140,4 +166,34 @@ pub fn turret_control_system(
 pub fn get_turret_forward_direction(turret_transform: &Transform) -> Vec2 {
     let forward_3d = turret_transform.rotation * Vec3::Z;
     Vec2::new(forward_3d.x, forward_3d.z)
+}
+
+pub fn is_turret_facing_target(
+    turret_transform: &Transform,
+    turret_position: Vec2,
+    target_position: Vec2,
+    angle_tolerance_degrees: f32,
+) -> bool {
+    // Get the forward direction of the turret
+    let turret_forward = get_turret_forward_direction(turret_transform);
+    
+    // Calculate the direction from turret to target
+    let to_target = (target_position - turret_position).normalize();
+    
+    // Calculate the dot product
+    let dot_product = turret_forward.dot(to_target);
+    
+    // Convert angle tolerance from degrees to dot product threshold
+    // cos(angle) gives us the dot product threshold
+    let angle_tolerance_radians = angle_tolerance_degrees.to_radians();
+    let dot_threshold = angle_tolerance_radians.cos();
+    
+    // Debug logging (commented out to reduce noise)
+    // let angle_between = dot_product.acos().to_degrees();
+    // info!("is_turret_facing_target: forward={:?}, to_target={:?}, dot={:.3}, angle_between={:.1}°, tolerance={:.1}°, threshold={:.3}", 
+    //       turret_forward, to_target, dot_product, angle_between, angle_tolerance_degrees, dot_threshold);
+    
+    // Check if turret is facing within tolerance
+    // Use a small epsilon to handle floating point precision issues
+    dot_product >= dot_threshold - 0.0001
 }

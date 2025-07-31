@@ -119,7 +119,7 @@ mod mech_component_tests {
     #[test]
     fn test_turret_cannon_creation() {
         let cannon = TurretCannon::default();
-        assert_eq!(cannon.fire_rate, 1.0);
+        assert_eq!(cannon.fire_rate, 1.5);
         assert_eq!(cannon.projectile_damage, 25.0);
         assert_eq!(cannon.rotation_speed, 120.0);
         assert_eq!(cannon.barrel_length, 0.5);

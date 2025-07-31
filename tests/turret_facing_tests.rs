@@ -238,3 +238,248 @@ fn test_turret_forward_direction_calculation() {
         );
     }
 }
+
+// Test version of auto_fire_system that fires immediately for testing
+fn test_auto_fire_system(
+    mut commands: Commands,
+    hero_query: Query<(&Transform, &Children, &AttackTarget), With<Hero>>,
+    upper_query: Query<(&Transform, &TurretCannon, &TurretRotation, Option<&Children>), With<MechUpperPart>>,
+    enemy_query: Query<&Transform, With<Enemy>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    use rust_and_ruin::systems::mech_assembly::get_barrel_tip_position;
+    use rust_and_ruin::systems::turret_control::is_turret_facing_target;
+    use bevy_rapier3d::prelude::*;
+    
+    const ATTACK_RANGE: f32 = 10.0;
+    const ANGLE_TOLERANCE: f32 = 5.0;
+    const TANK_SHELL_SPEED: f32 = 15.0;
+    const TANK_SHELL_RANGE: f32 = 15.0;
+    
+    for (hero_transform, children, attack_target) in hero_query.iter() {
+        if let Ok(enemy_transform) = enemy_query.get(attack_target.entity) {
+            let hero_pos = Vec2::new(hero_transform.translation.x, hero_transform.translation.z);
+            let enemy_pos = Vec2::new(enemy_transform.translation.x, enemy_transform.translation.z);
+            let distance = hero_pos.distance(enemy_pos);
+            
+            if distance <= ATTACK_RANGE {
+                for child in children {
+                    if let Ok((upper_transform, turret_cannon, _turret_rotation, _upper_children)) = upper_query.get(*child) {
+                        let global_upper_transform = hero_transform.mul_transform(*upper_transform);
+                        let turret_position = Vec2::new(global_upper_transform.translation.x, global_upper_transform.translation.z);
+                        let is_facing = is_turret_facing_target(&global_upper_transform, turret_position, enemy_pos, ANGLE_TOLERANCE);
+                        
+                        println!("Test auto_fire: turret_pos={:?}, enemy_pos={:?}, is_facing={}", 
+                               turret_position, enemy_pos, is_facing);
+                        
+                        if is_facing {
+                            let spawn_pos_3d = get_barrel_tip_position(&global_upper_transform, turret_cannon.barrel_length);
+                            let projectile_spawn_pos = Vec2::new(spawn_pos_3d.x, spawn_pos_3d.z);
+                            
+                            let direction = (enemy_pos - projectile_spawn_pos).normalize();
+                            let shell_velocity = direction * TANK_SHELL_SPEED;
+                            
+                            let shell_mesh = meshes.add(Mesh::from(shape::Box::new(0.4, 0.2, 0.4)));
+                            let shell_material = materials.add(Color::rgb(1.0, 1.0, 0.0).into());
+                            
+                            commands.spawn((
+                                Projectile {
+                                    damage: turret_cannon.projectile_damage,
+                                    speed: TANK_SHELL_SPEED,
+                                },
+                                TankShell {
+                                    velocity: shell_velocity,
+                                    spawn_position: projectile_spawn_pos,
+                                    max_range: TANK_SHELL_RANGE,
+                                },
+                                PbrBundle {
+                                    mesh: shell_mesh,
+                                    material: shell_material,
+                                    transform: Transform::from_xyz(projectile_spawn_pos.x, 0.75, projectile_spawn_pos.y),
+                                    ..default()
+                                },
+                                RigidBody::Dynamic,
+                                Collider::ball(0.2),
+                                ColliderMassProperties::Density(10.0),
+                                Restitution::coefficient(0.4),
+                                Friction::coefficient(0.3),
+                                Ccd::enabled(),
+                                Velocity {
+                                    linvel: Vec3::new(shell_velocity.x, 0.0, shell_velocity.y),
+                                    angvel: Vec3::ZERO,
+                                },
+                                ExternalImpulse::default(),
+                                GravityScale(0.3),
+                                ActiveEvents::COLLISION_EVENTS
+                            ));
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_turret_only_fires_when_facing_target() {
+    use bevy::scene::SceneSpawner;
+    
+    // Test cases with turret at different angles relative to enemy
+    struct TestCase {
+        turret_angle: f32,
+        enemy_position: Vec3,
+        should_fire: bool,
+        description: &'static str,
+    }
+    
+    let test_cases = vec![
+        TestCase {
+            turret_angle: 90.0,  // Facing right
+            enemy_position: Vec3::new(10.0, 0.0, 0.0), // Enemy to the right
+            should_fire: true,
+            description: "Turret facing enemy directly",
+        },
+        TestCase {
+            turret_angle: 270.0,  // Facing left
+            enemy_position: Vec3::new(10.0, 0.0, 0.0), // Enemy to the right
+            should_fire: false,
+            description: "Turret facing opposite direction",
+        },
+        TestCase {
+            turret_angle: 0.0,  // Facing forward (+Z)
+            enemy_position: Vec3::new(10.0, 0.0, 0.0), // Enemy to the right
+            should_fire: false,
+            description: "Turret facing perpendicular to enemy",
+        },
+        TestCase {
+            turret_angle: 85.0,  // Almost facing right (5 degrees off)
+            enemy_position: Vec3::new(10.0, 0.0, 0.0), // Enemy to the right
+            should_fire: true,  // Within 5 degree tolerance
+            description: "Turret within angle tolerance",
+        },
+        TestCase {
+            turret_angle: 80.0,  // 10 degrees off from right
+            enemy_position: Vec3::new(10.0, 0.0, 0.0), // Enemy to the right
+            should_fire: false,  // Outside 5 degree tolerance
+            description: "Turret outside angle tolerance",
+        },
+    ];
+    
+    for test_case in test_cases {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, TransformPlugin, HierarchyPlugin, bevy::log::LogPlugin::default()));
+        app.insert_resource(MouseWorldPosition { position: Vec2::ZERO });
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(Assets::<Mesh>::default());
+        app.insert_resource(Assets::<StandardMaterial>::default());
+        app.insert_resource(Assets::<bevy::scene::Scene>::default());
+        app.insert_resource(SceneSpawner::default());
+        
+        // Add the test auto fire system (without timer)
+        app.add_systems(Update, (
+            bevy::transform::systems::propagate_transforms,
+            test_auto_fire_system,
+        ).chain());
+        
+        // Create hero/mech at origin
+        let mech_entity = app.world.spawn((
+            Transform::from_translation(Vec3::ZERO),
+            GlobalTransform::default(),
+            Hero,
+        )).id();
+        
+        // Create turret with specific rotation
+        let turret_entity = app.world.spawn((
+            Transform::from_rotation(Quat::from_rotation_y(test_case.turret_angle.to_radians())),
+            GlobalTransform::default(),
+            MechUpperPart,
+            TurretRotation {
+                current_angle: test_case.turret_angle,
+                target_angle: test_case.turret_angle, // Simulating turret at rest
+            },
+            TurretCannon {
+                fire_rate: 0.1, // Fast fire rate for testing
+                projectile_damage: 10.0,
+                rotation_speed: 360.0,
+                barrel_length: 2.0,
+            },
+        )).id();
+        
+        // Set up parent-child relationship
+        app.world.entity_mut(turret_entity).set_parent(mech_entity);
+        
+        // Create enemy
+        let enemy_entity = app.world.spawn((
+            Transform::from_translation(test_case.enemy_position),
+            GlobalTransform::default(),
+            Enemy,
+        )).id();
+        
+        // Give mech an attack target
+        app.world.entity_mut(mech_entity).insert(AttackTarget { entity: enemy_entity });
+        
+        
+        // Count projectiles before update
+        let projectiles_before = app.world.query::<&Projectile>().iter(&app.world).count();
+        
+        // For testing, we need to manually set the timer since Local<f32> starts at 0
+        // and we can't easily control time advancement in tests
+        
+        // Run update to trigger auto fire system
+        app.update();
+        
+        // Count projectiles after update
+        let projectiles_after = app.world.query::<&Projectile>().iter(&app.world).count();
+        
+        let fired = projectiles_after > projectiles_before;
+        
+        // Debug logging
+        println!("=== Test case: {} ===", test_case.description);
+        println!("Projectiles before: {}, after: {}", projectiles_before, projectiles_after);
+        
+        // Check what components the mech has
+        if app.world.get::<Hero>(mech_entity).is_some() {
+            println!("Mech has Hero component");
+        }
+        if app.world.get::<AttackTarget>(mech_entity).is_some() {
+            println!("Mech has AttackTarget component");
+        }
+        
+        // Check turret components
+        if let Some(turret_transform) = app.world.get::<Transform>(turret_entity) {
+            let forward = get_turret_forward_direction(&turret_transform);
+            println!("Turret forward direction: {:?}", forward);
+        }
+        if app.world.get::<MechUpperPart>(turret_entity).is_some() {
+            println!("Turret has MechUpperPart component");
+        }
+        if app.world.get::<TurretCannon>(turret_entity).is_some() {
+            println!("Turret has TurretCannon component");
+        }
+        if app.world.get::<TurretRotation>(turret_entity).is_some() {
+            println!("Turret has TurretRotation component");
+        }
+        if app.world.get::<Children>(turret_entity).is_some() {
+            println!("Turret has Children component");
+        } else {
+            println!("Turret MISSING Children component!");
+        }
+        
+        println!("{}: turret_angle={}, enemy_pos={:?}, fired={}, expected={}",
+                 test_case.description,
+                 test_case.turret_angle,
+                 test_case.enemy_position,
+                 fired,
+                 test_case.should_fire);
+        
+        assert_eq!(
+            fired, test_case.should_fire,
+            "{}: Expected firing={}, but got={}",
+            test_case.description,
+            test_case.should_fire,
+            fired
+        );
+    }
+}

@@ -5,7 +5,7 @@ use crate::resources::MouseWorldPosition;
 use crate::rendering;
 use crate::mech::{MechUpperPart, TurretCannon, CannonBarrel, TurretRotation};
 use crate::systems::mech_assembly::get_barrel_tip_position;
-use crate::systems::turret_control::shortest_angle_difference;
+use crate::systems::turret_control::is_turret_facing_target;
 
 const ROCKET_INITIAL_SPEED: f32 = 0.5;
 const ROCKET_MAX_SPEED: f32 = 8.0;
@@ -120,7 +120,7 @@ pub fn auto_fire_system(
     mut commands: Commands,
     time: Res<Time>,
     hero_query: Query<(&Transform, &Children, &AttackTarget), With<Hero>>,
-    upper_query: Query<(&Transform, &TurretCannon, &TurretRotation, &Children), With<MechUpperPart>>,
+    upper_query: Query<(&Transform, &TurretCannon, &TurretRotation, Option<&Children>), With<MechUpperPart>>,
     enemy_query: Query<&Transform, With<Enemy>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -134,19 +134,26 @@ pub fn auto_fire_system(
             let enemy_pos = Vec2::new(enemy_transform.translation.x, enemy_transform.translation.z);
             let distance = hero_pos.distance(enemy_pos);
             
-            info!("Auto-fire check: distance={:.2}, range={:.2}, time={:.2}, fire_rate=1.0", distance, ATTACK_RANGE, *last_fire_time);
+            // info!("Auto-fire check: hero_pos={:?}, enemy_pos={:?}, distance={:.2}, range={:.2}, time={:.2}, fire_rate={}", 
+            //       hero_pos, enemy_pos, distance, ATTACK_RANGE, *last_fire_time, 1.0);
             
             // Check if enemy is in range
             if distance <= ATTACK_RANGE {
+                // info!("Enemy in range! Checking {} children for turret", children.len());
                 for child in children {
-                    if let Ok((upper_transform, turret_cannon, turret_rotation, _upper_children)) = upper_query.get(*child) {
-                        // Check if turret is aimed at target (within tolerance)
-                        let angle_diff = shortest_angle_difference(turret_rotation.current_angle, turret_rotation.target_angle).abs();
-                        info!("Turret angle check: current={:.2}, target={:.2}, diff={:.2}, tolerance={:.2}", 
-                              turret_rotation.current_angle, turret_rotation.target_angle, angle_diff, ANGLE_TOLERANCE);
-                        if angle_diff <= ANGLE_TOLERANCE && *last_fire_time >= turret_cannon.fire_rate {
+                    if let Ok((upper_transform, turret_cannon, _turret_rotation, _upper_children)) = upper_query.get(*child) {
+                        // info!("Found turret child!");
+                        // Check if turret is actually facing the target (within tolerance)
+                        let global_upper_transform = hero_transform.mul_transform(*upper_transform);
+                        let turret_position = Vec2::new(global_upper_transform.translation.x, global_upper_transform.translation.z);
+                        // Use global transform for facing check
+                        let is_facing = is_turret_facing_target(&global_upper_transform, turret_position, enemy_pos, ANGLE_TOLERANCE);
+                        
+                        // info!("Turret facing check: turret_pos={:?}, enemy_pos={:?}, is_facing={}, tolerance={:.2} degrees, fire_rate={}, time_since_last_fire={}", 
+                        //       turret_position, enemy_pos, is_facing, ANGLE_TOLERANCE, turret_cannon.fire_rate, *last_fire_time);
+                        
+                        if is_facing && *last_fire_time >= turret_cannon.fire_rate {
                             // Fire projectile
-                            let global_upper_transform = hero_transform.mul_transform(*upper_transform);
                             let spawn_pos_3d = get_barrel_tip_position(&global_upper_transform, turret_cannon.barrel_length);
                             let projectile_spawn_pos = Vec2::new(spawn_pos_3d.x, spawn_pos_3d.z);
                             
