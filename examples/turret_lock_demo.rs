@@ -166,6 +166,9 @@ fn main() {
             input::update_target_indicator_system,
             movement::movement_system,
             turret_control::turret_control_system,
+            projectile::auto_fire_system,
+            projectile::tank_shell_movement_system,
+            projectile::tank_shell_lifetime_system,
             camera_zoom_system,
             debug_info_system,
         ).chain())
@@ -222,20 +225,46 @@ fn setup(
     // Add Hero component to mech
     commands.entity(mech_entity).insert(Hero);
     
-    // Spawn enemy at (5, 0, 5)
+    // Add ground plane for shells to bounce on
+    commands.spawn((
+        PbrBundle {
+            mesh: meshes.add(shape::Plane::from_size(50.0).into()),
+            material: materials.add(StandardMaterial {
+                base_color: Color::rgb(0.2, 0.2, 0.2),
+                unlit: true,
+                ..default()
+            }),
+            transform: Transform::from_xyz(0.0, -0.01, 0.0),
+            ..default()
+        },
+        RigidBody::Fixed,
+        Collider::cuboid(25.0, 0.005, 25.0),
+        Friction::coefficient(0.8),
+        Restitution::coefficient(0.2),
+    ));
+    
+    // Spawn enemy at (5, 0, 5) - round target that doesn't move or get destroyed
     let _enemy_entity = commands.spawn((
         PbrBundle {
-            mesh: meshes.add(shape::Box::new(1.5, 0.375, 1.5).into()),
+            mesh: meshes.add(shape::UVSphere {
+                radius: 0.75,
+                sectors: 32,
+                stacks: 16,
+            }.into()),
             material: materials.add(StandardMaterial {
                 base_color: Color::rgb(1.0, 0.0, 0.0),
                 unlit: true,
                 ..default()
             }),
-            transform: Transform::from_xyz(5.0, 0.0, 5.0),
+            transform: Transform::from_xyz(5.0, 0.75, 5.0),  // Raised to match shell height
             ..default()
         },
         Enemy,
-        Health::new(100.0),
+        RigidBody::Fixed,  // Won't move from impacts
+        Collider::ball(0.75),  // Collision shape
+        ColliderMassProperties::Density(1000.0),  // Very heavy
+        Restitution::coefficient(0.8),  // Bouncy for shell impacts
+        Friction::coefficient(0.1),
     )).id();
     
     // UI text for debug info

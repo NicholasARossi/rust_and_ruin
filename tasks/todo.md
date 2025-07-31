@@ -331,3 +331,51 @@ Turret lock-on functionality is fully implemented and working. When Q is pressed
 - Turret continuously tracks the enemy while the tank moves
 - Chassis and turret move independently as requested
 - Visual demo available via `cargo run --example turret_lock_demo`
+
+## 📝 Review of Changes (2025-07-31) - Tank Shell Continuous Firing Demo
+
+### Request:
+Modify turret_lock_demo to:
+1. Fire tank shells continuously at target
+2. Make target round (sphere)
+3. Target should not move under shock or be destroyed
+4. Shells should show inertia effects
+
+### Changes Made:
+
+1. **Added continuous firing system** (`examples/turret_lock_demo.rs`):
+   - Added `auto_fire_system`, `tank_shell_movement_system`, and `tank_shell_lifetime_system` to update systems
+   - Tank now automatically fires shells when locked onto target and in range
+
+2. **Made target round and immovable**:
+   - Changed enemy mesh from Box to UVSphere (radius 0.75)
+   - Added `RigidBody::Fixed` to prevent movement from impacts
+   - Removed `Health` component so target can't be destroyed
+   - Added collision components: `Collider::ball`, mass properties, restitution (0.8), friction
+
+3. **Added ground plane for physics**:
+   - Created 50x50 ground plane with collision
+   - Allows shells to bounce and roll after hitting target
+   - Added friction and restitution for realistic physics
+
+4. **Shell physics demonstration**:
+   - Shells have mass (density 10.0) and gravity (scale 0.3)
+   - Shells bounce off the spherical target showing inertia
+   - Continuous collision detection enabled for fast projectiles
+   - Shells despawn after traveling max range
+
+### Technical Details:
+- Fire rate: 1.0 second between shots
+- Shell speed: 15.0 units/second
+- Shell range: 15.0 units
+- Attack range: 10.0 units
+- Target restitution: 0.8 (bouncy)
+- Shell gravity scale: 0.3 (slight arc)
+
+### Result:
+The demo now shows continuous tank shell firing with realistic physics:
+- Lock onto the red sphere with Q
+- Tank fires yellow shells automatically when in range
+- Shells bounce off the indestructible sphere target
+- Physics interactions demonstrate inertia and momentum
+- Run with: `cargo run --example turret_lock_demo`
