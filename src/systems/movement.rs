@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use crate::components::{Hero, MoveTarget, AttackTarget, TankMovement};
-use crate::mech::{MechLower, TankTreads};
+use crate::mech::{MechLower, TankTreads, MechMovement};
 
 const ARRIVAL_THRESHOLD: f32 = 0.05;
 const ATTACK_RANGE: f32 = 10.0;  // Match projectile.rs
@@ -8,7 +8,7 @@ const ATTACK_RANGE: f32 = 10.0;  // Match projectile.rs
 pub fn movement_system(
     time: Res<Time>,
     mut commands: Commands,
-    mut query: Query<(Entity, &mut Transform, &MoveTarget, &Children), (With<Hero>, Without<TankMovement>)>,
+    mut query: Query<(Entity, &mut Transform, &MoveTarget, &Children), (With<Hero>, Without<TankMovement>, Without<MechMovement>)>,
     lower_query: Query<(&MechLower, &TankTreads)>,
 ) {
     for (entity, mut transform, target, children) in query.iter_mut() {

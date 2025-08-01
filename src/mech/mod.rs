@@ -1,5 +1,17 @@
 use bevy::prelude::*;
 
+pub mod traits;
+pub mod components;
+pub mod lower_bodies;
+pub mod upper_bodies;
+pub mod weapons;
+
+pub use traits::*;
+pub use components::*;
+pub use lower_bodies::*;
+pub use upper_bodies::*;
+pub use weapons::*;
+
 #[derive(Component, Debug)]
 pub struct Mech {
     pub name: String,

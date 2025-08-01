@@ -6,7 +6,7 @@ use rust_and_ruin::components::*;
 use rust_and_ruin::systems::*;
 use rust_and_ruin::resources::*;
 
-// Simple mech spawn function for demo
+// Simple mech spawn function for demo using new components
 fn spawn_mech(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
@@ -14,7 +14,7 @@ fn spawn_mech(
     position: Vec3,
     rotation: f32,
 ) -> Entity {
-    // Create main mech entity (chassis/lower)
+    // Create main mech entity with hierarchy tracking, lower body stats, and visual
     let mech_entity = commands.spawn((
         PbrBundle {
             mesh: meshes.add(shape::Box::new(1.5, 0.375, 2.25).into()),
@@ -27,11 +27,13 @@ fn spawn_mech(
                 .with_rotation(Quat::from_rotation_y(rotation)),
             ..default()
         },
-        MechLowerPart,
+        Mech::new("DemoMech"),
+        MechHierarchy::new(),
+        create_tank_treads_lower(),  // MechLowerBody goes on main entity
     )).id();
     
-    // Create turret entity as child
-    let turret_entity = commands.spawn((
+    // Create upper body (turret) with hardpoints
+    let upper_entity = commands.spawn((
         PbrBundle {
             mesh: meshes.add(shape::Box::new(1.125, 0.375, 1.125).into()),
             material: materials.add(StandardMaterial {
@@ -42,21 +44,21 @@ fn spawn_mech(
             transform: Transform::from_translation(Vec3::new(0.0, 0.1, 0.0)),
             ..default()
         },
-        MechUpperPart,
+        create_turret_upper(),
+        MechRotation {
+            current_angle: 0.0,
+            target_angle: 0.0,
+        },
+        // Add old components for compatibility
         TurretRotation {
             current_angle: 0.0,
             target_angle: 0.0,
         },
-        TurretCannon {
-            fire_rate: 1.0,
-            projectile_damage: 10.0,
-            rotation_speed: 180.0,
-            barrel_length: 1.5,
-        },
+        TurretCannon::default(),
     )).id();
     
-    // Create barrel visual as child of turret
-    let barrel_entity = commands.spawn((
+    // Create weapon (cannon) mounted on main hardpoint
+    let weapon_entity = commands.spawn((
         PbrBundle {
             mesh: meshes.add(shape::Box::new(0.225, 0.225, 1.5).into()),
             material: materials.add(StandardMaterial {
@@ -67,11 +69,20 @@ fn spawn_mech(
             transform: Transform::from_translation(Vec3::new(0.0, 0.025, 0.75)),
             ..default()
         },
+        create_cannon_weapon("main".to_string()),
+        CannonWeapon::default(),
     )).id();
     
-    // Set up hierarchy
-    commands.entity(turret_entity).push_children(&[barrel_entity]);
-    commands.entity(mech_entity).push_children(&[turret_entity]);
+    // Set up hierarchy - upper body is direct child of mech
+    commands.entity(upper_entity).push_children(&[weapon_entity]);
+    commands.entity(mech_entity).push_children(&[upper_entity]);
+    
+    // Update MechHierarchy
+    commands.entity(mech_entity).insert(MechHierarchy {
+        lower: None,  // No separate lower entity, it's part of the main mech
+        upper: Some(upper_entity),
+        weapons: vec![weapon_entity],
+    });
     
     mech_entity
 }
@@ -164,10 +175,11 @@ fn main() {
             input::click_to_move_system,
             input::enemy_selection_system,
             input::update_target_indicator_system,
-            tank_movement::tank_movement_system,
+            // Use new systems directly
+            mech_movement_system,
             movement::movement_system,
-            turret_control::turret_control_system,
-            projectile::auto_fire_system,
+            upper_body_control_system,
+            weapon_control_system,
             projectile::tank_shell_movement_system,
             projectile::tank_shell_lifetime_system,
             camera_zoom_system,
@@ -223,10 +235,10 @@ fn setup(
         0.0,
     );
     
-    // Add Hero and TankMovement components to mech
+    // Add Hero and MechMovement components to mech
     commands.entity(mech_entity).insert((
         Hero,
-        TankMovement::default(),
+        MechMovement::default(),
     ));
     
     // Add ground plane for shells to bounce on
@@ -297,26 +309,31 @@ fn setup(
 }
 
 fn debug_info_system(
-    hero_query: Query<(&Transform, Option<&AttackTarget>, Option<&TankMovement>), With<Hero>>,
-    turret_query: Query<(&Transform, &TurretRotation, &Parent), With<TurretCannon>>,
+    hero_query: Query<(&Transform, Option<&AttackTarget>, Option<&MechMovement>, Option<&MechLowerBody>, &Children), With<Hero>>,
+    upper_query: Query<(&Transform, &MechRotation, &Parent), With<MechUpperBody>>,
     enemy_query: Query<&Transform, With<Enemy>>,
     mut text_query: Query<&mut Text>,
     zoom_level: Res<ZoomLevel>,
 ) {
-    if let Ok((hero_transform, attack_target, tank_movement)) = hero_query.get_single() {
+    if let Ok((hero_transform, attack_target, mech_movement, mech_lower, children)) = hero_query.get_single() {
         if let Ok(mut text) = text_query.get_single_mut() {
             let mut status = String::from("Press Q near enemy to lock turret\nLeft click to move tank\nMouse wheel or -/= or [/] to zoom\n\n");
             
-            status.push_str(&format!("Tank Position: ({:.1}, {:.1})\n", 
+            status.push_str(&format!("Mech Position: ({:.1}, {:.1})\n", 
                 hero_transform.translation.x, 
                 hero_transform.translation.z));
             
-            // Add tank movement state info
-            if let Some(tank_movement) = tank_movement {
-                status.push_str(&format!("Tank State: {:?}, Speed: {:.1}/{:.1}\n", 
-                    tank_movement.rotation_state,
-                    tank_movement.current_speed,
-                    tank_movement.max_speed));
+            // Add mech movement state info
+            if let Some(movement) = mech_movement {
+                let max_speed = mech_lower.map(|l| l.movement_stats.max_speed).unwrap_or(5.0);
+                
+                status.push_str(&format!("Mech State: {:?}, Speed: {:.1}/{:.1}\n", 
+                    movement.movement_state,
+                    movement.current_speed,
+                    max_speed));
+                status.push_str(&format!("Mech Rotation: current={:.1}°, target={:.1}°\n",
+                    hero_transform.rotation.to_euler(EulerRot::YXZ).0.to_degrees(),
+                    movement.target_rotation));
             }
             
             status.push_str(&format!("Zoom Level: {:.2} (Min: {:.2}, Max: {:.2})\n", 
@@ -333,27 +350,28 @@ fn debug_info_system(
                         enemy_transform.translation.z));
                 }
                 
-                // Find turret info
-                for (turret_transform, turret_rotation, parent) in turret_query.iter() {
-                    if let Ok((parent_transform, _, _)) = hero_query.get(parent.get()) {
-                        status.push_str(&format!("Turret Angle: {:.1}° (Target: {:.1}°)\n",
-                            turret_rotation.current_angle,
-                            turret_rotation.target_angle));
+                // Find upper body info from children
+                for child in children {
+                    if let Ok((upper_transform, rotation, _)) = upper_query.get(*child) {
+                        status.push_str(&format!("Upper Body Angle: {:.1}° (Target: {:.1}°)\n",
+                            rotation.current_angle,
+                            rotation.target_angle));
                         
-                        // Calculate if turret is facing target
-                        let global_turret = parent_transform.mul_transform(*turret_transform);
-                        let turret_pos = Vec2::new(global_turret.translation.x, global_turret.translation.z);
+                        // Calculate if upper body is facing target
+                        let global_upper = hero_transform.mul_transform(*upper_transform);
+                        let upper_pos = Vec2::new(global_upper.translation.x, global_upper.translation.z);
                         
                         if let Ok(enemy_transform) = enemy_query.get(attack_target.entity) {
                             let enemy_pos = Vec2::new(enemy_transform.translation.x, enemy_transform.translation.z);
-                            let is_facing = turret_control::is_turret_facing_target(
-                                &global_turret,
-                                turret_pos,
+                            let is_facing = is_upper_facing_target(
+                                upper_transform,
+                                upper_pos,
                                 enemy_pos,
                                 5.0,
                             );
                             status.push_str(&format!("Facing Target: {}\n", if is_facing { "YES" } else { "NO" }));
                         }
+                        break;
                     }
                 }
             } else {
