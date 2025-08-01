@@ -4,6 +4,16 @@ use bevy::prelude::*;
 pub struct Hero;
 
 #[derive(Component)]
+pub struct AttackTarget {
+    pub entity: Entity,
+}
+
+#[derive(Component)]
+pub struct TargetIndicator {
+    pub target: Entity,
+}
+
+#[derive(Component)]
 pub struct Enemy;
 
 #[derive(Component)]
@@ -41,4 +51,46 @@ pub struct Rocket {
     pub acceleration_rate: f32,
     pub current_speed: f32,
     pub direction: Vec2,
+}
+
+#[derive(Component)]
+pub struct TankShell {
+    pub velocity: Vec2,
+    pub spawn_position: Vec2,
+    pub max_range: f32,
+}
+
+#[derive(Component)]
+pub struct HitFlash {
+    pub timer: Timer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TankRotationState {
+    Idle,
+    Rotating,
+    Moving,
+}
+
+#[derive(Component)]
+pub struct TankMovement {
+    pub rotation_state: TankRotationState,
+    pub target_rotation: f32,
+    pub current_speed: f32,
+    pub acceleration: f32,
+    pub max_speed: f32,
+    pub rotation_speed: f32, // degrees per second
+}
+
+impl Default for TankMovement {
+    fn default() -> Self {
+        Self {
+            rotation_state: TankRotationState::Idle,
+            target_rotation: 0.0,
+            current_speed: 0.0,
+            acceleration: 3.0,
+            max_speed: 5.0,
+            rotation_speed: 90.0,
+        }
+    }
 }

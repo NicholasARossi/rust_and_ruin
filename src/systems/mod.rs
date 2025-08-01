@@ -1,9 +1,23 @@
 pub mod collision;
 pub mod input;
+pub mod mech_assembly;
 pub mod movement;
 pub mod projectile;
+pub mod tank_movement;
+pub mod turret_control;
+pub mod visual_effects;
+pub mod mech_movement;
+pub mod upper_body_control;
+pub mod weapon_control;
 
 pub use collision::*;
 pub use input::*;
+pub use mech_assembly::*;
 pub use movement::*;
 pub use projectile::*;
+pub use tank_movement::*;
+pub use turret_control::{turret_control_system, get_turret_forward_direction, is_turret_facing_target};
+pub use visual_effects::*;
+pub use mech_movement::*;
+pub use upper_body_control::*;
+pub use weapon_control::*;

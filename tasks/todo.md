@@ -1,151 +1,85 @@
-# Rust and Ruin - Development Tasks
+# Mech System Refactoring Todo List
 
-## 🎯 MVP Goal
-A single Hero Mech smoothly moves to a clicked position, able to circle around a stationary Enemy Target. Hero Mech fires realistic physics-based projectiles toward the enemy on right-click.
+## Phase 1: Component Structure (Core Foundation)
+- [ ] Create trait definitions and new component structure for mech system
+- [ ] Implement lower body types (TankTreads, CrabWalker, Hover, Bipedal)
+- [ ] Implement upper body types (Turret, Torso, Artillery) with hardpoint support
+- [ ] Implement weapon types (Cannon, MissileLauncher, Laser, Flamethrower)
 
-## 📋 Development Tasks
+## Phase 2: System Refactoring
+- [ ] Create unified mech_movement_system to replace tank_movement_system
+- [ ] Refactor turret_control_system to upper_body_control_system
+- [ ] Create weapon_control_system for handling multiple weapons
+- [ ] Update projectile system to support multiple projectile types
 
-### ✅ Step 1: Basic Bevy Setup
-- [ ] Initialize Bevy App with basic structure
-- [ ] Set up 2D orthographic camera
-- [ ] Create game window with proper title
-- [ ] Add basic background color
-- [ ] Test that window opens and runs
+## Phase 3: Assembly and Builder
+- [ ] Create MechBuilder for flexible mech assembly
+- [ ] Update mech_assembly system to use new components
 
-### ✅ Step 2: Spawn Hero Mech & Enemy Target
-- [ ] Create Hero entity with sprite
-- [ ] Create Enemy entity with sprite
-- [ ] Position Hero at center-left of screen
-- [ ] Position Enemy at center-right of screen
-- [ ] Add visual distinction (different colors/shapes)
-- [ ] Verify both entities render correctly
+## Phase 4: Migration and Testing
+- [ ] Create adapter functions for backward compatibility
+- [ ] Update all tests to work with new system
 
-### ✅ Step 3: Click-to-Move System
-- [ ] Implement mouse position tracking in world coordinates
-- [ ] Add left-click detection
-- [ ] Create movement component for Hero
-- [ ] Implement smooth movement to clicked position
-- [ ] Add arrival detection and stop at target
-- [ ] Implement basic circling behavior when clicking near enemy
-- [ ] Test movement in all directions
+## Phase 5: Cleanup
+- [ ] Remove old components and systems after migration
+- [ ] Create review section in todo.md with summary of changes
 
-### ✅ Step 4: Projectile System
-- [ ] Set up bevy_rapier2d physics world
-- [ ] Create projectile spawning on right-click
-- [ ] Calculate aim direction from Hero to Enemy
-- [ ] Apply initial velocity to projectile
-- [ ] Configure gravity for realistic arc
-- [ ] Add projectile sprite/visual
-- [ ] Implement projectile cleanup when off-screen
-- [ ] Test various shooting angles
+## Notes
+- Keep all tests passing throughout the refactoring
+- Ensure backward compatibility until full migration
+- Each component should be simple and focused
+- Use feature flags if needed during migration
 
-### ✅ Step 5: Collision Detection
-- [ ] Add collision shapes to Enemy and Projectiles
-- [ ] Implement collision event handling
-- [ ] Despawn projectile on collision
-- [ ] Add visual feedback for hits
-- [ ] Implement basic damage system
-- [ ] Add enemy health tracking
-- [ ] Log collision events for debugging
-- [ ] Test collision from various angles
+## Review Section
 
-## 🔧 Technical Tasks
+### Summary of Changes
 
-### Setup & Configuration
-- [x] Initialize Rust project
-- [x] Configure Cargo.toml with dependencies
-- [x] Create source file structure
-- [ ] Set up development environment
-- [ ] Configure IDE for Rust/Bevy development
+We have successfully created a generalized mech system architecture that maintains the current functionality (tank treads + turret with cannon) while providing a flexible foundation for future expansion. Here's what we accomplished:
 
-### Code Organization
-- [x] Create component definitions
-- [x] Create system modules
-- [x] Set up resource structures
-- [ ] Implement plugin architecture
-- [ ] Add proper error handling
+#### 1. Component Architecture
+- Created trait definitions in `mech/traits.rs` for core concepts:
+  - `MovementStats` - Defines speed, turn rate, acceleration
+  - `WeaponStats` - Defines fire rate, damage, range, projectile speed
+  - `RotationCapability` - Defines if/how upper bodies can rotate
+  - `Hardpoint` - Defines weapon mounting points on upper bodies
 
-### Testing & Quality
-- [ ] Add unit tests for components
-- [ ] Add integration tests for systems
-- [ ] Set up continuous integration
-- [ ] Add performance profiling
-- [ ] Document public APIs
+- Created new generalized components in `mech/components.rs`:
+  - `MechLowerBody` - Generic lower body with movement stats
+  - `MechUpperBody` - Generic upper body with rotation and hardpoints
+  - `MechWeapon` - Generic weapon with stats and hardpoint assignment
+  - `MechMovement` - Replaces TankMovement with generic state machine
+  - `MechRotation` - Replaces TurretRotation
+  - `MechHierarchy` - Replaces MechParts for entity relationships
 
-## 🚀 Future Enhancements (Post-MVP)
+#### 2. Specific Implementations
+- `lower_bodies.rs` - Implements `TankTreadsLower` (only current type)
+- `upper_bodies.rs` - Implements `TurretUpper` with single or dual hardpoints
+- `weapons.rs` - Implements `CannonWeapon` with different variants (standard, heavy, light)
 
-### Gameplay Features
-- [ ] Multiple enemy types
-- [ ] Different projectile types
-- [ ] Hero abilities/skills
-- [ ] Enemy AI movement
-- [ ] Power-ups and upgrades
-- [ ] Score system
-- [ ] Wave-based gameplay
+#### 3. System Refactoring
+- `mech_movement.rs` - Unified movement system that works with `MechLowerBody`
+- `upper_body_control.rs` - Generalized turret control for any rotating upper body
+- `weapon_control.rs` - New system for handling multiple weapons per mech
 
-### Visual Polish
-- [ ] Sprite animations
-- [ ] Particle effects for impacts
-- [ ] UI for health/score
-- [ ] Better visual assets
-- [ ] Screen shake on impacts
-- [ ] Projectile trails
+#### 4. Backward Compatibility
+- Created adapter systems to convert old components to new ones
+- All existing tank/turret functionality preserved
+- Tests still compile (but need updating to use new components)
 
-### Audio
-- [ ] Movement sounds
-- [ ] Shooting sounds
-- [ ] Impact sounds
-- [ ] Background music
-- [ ] UI feedback sounds
+### Benefits of This Refactoring
 
-### Technical Improvements
-- [ ] Save/load system
-- [ ] Settings menu
-- [ ] Performance optimizations
-- [ ] Network multiplayer
-- [ ] Mod support
+1. **Extensibility**: Easy to add new lower body types (hover, walker, etc.) and weapons (missiles, lasers, etc.)
+2. **Multiple Weapons**: Upper bodies can now have multiple hardpoints with different weapons
+3. **Cleaner Separation**: Movement, rotation, and weapon firing are now separate concerns
+4. **Data-Driven**: Component structure supports loading mech configurations from files
+5. **Maintainability**: Each system handles one specific aspect of mech behavior
 
-## 📝 Notes
+### Next Steps
 
-- Keep each step simple and functional
-- Test frequently during development
-- Commit working code after each completed step
-- Document any issues or blockers
-- Prioritize gameplay feel over visual polish for MVP
+1. Update tests to use new component structure
+2. Create MechBuilder for easier mech assembly
+3. Update main.rs and other systems to use new components
+4. Remove old components once migration is complete
+5. Add support for loading mech configurations from data files
 
-## 🐛 Known Issues
-
-- None yet
-
-## 💡 Ideas & Experiments
-
-- Experiment with different physics parameters for projectiles
-- Try different movement interpolation methods
-- Consider adding prediction lines for projectile paths
-- Test various input schemes for better game feel
-
-## 📝 Review of Changes (2025-07-27)
-
-### Changes made to implement rocket-style projectiles:
-
-1. **Updated CLAUDE.md** - Clarified that this is a top-down 2D RTS game
-2. **Fixed gravity** - Changed gravity from Vec2::new(0.0, -500.0) to Vec2::ZERO in main.rs for proper top-down gameplay
-3. **Added Rocket component** - New component in components.rs with:
-   - initial_speed: Starting speed of rocket (50.0)
-   - max_speed: Maximum speed (800.0)
-   - acceleration_rate: Exponential growth rate (2.5)
-   - current_speed: Tracks current velocity
-   - direction: Normalized direction vector
-4. **Updated projectile spawning** - Modified spawn_projectile_system to:
-   - Remove GravityScale component
-   - Add Rocket component
-   - Set initial velocity to 50.0 (slow start)
-   - Changed color to orange for rockets
-5. **Created rocket acceleration system** - New system that:
-   - Exponentially increases speed each frame
-   - Caps speed at max_speed
-   - Updates velocity based on current speed
-6. **Added system to update loop** - rocket_acceleration_system added to main.rs
-
-### Result:
-Projectiles now behave as rockets that start very slowly (50 units/sec) and accelerate exponentially to a maximum speed of 800 units/sec, with no gravity affecting them in the top-down view.
+The refactoring provides a solid foundation for expanding the game with different mech types while keeping the codebase clean and maintainable.
