@@ -7,6 +7,28 @@ use rust_and_ruin::systems::*;
 use rust_and_ruin::resources::*;
 use rust_and_ruin::systems::attack_target_propagation::propagate_attack_target_system;
 
+// Auto-target the enemy on startup for demo purposes
+fn auto_target_enemy_on_startup(
+    mut commands: Commands,
+    hero_query: Query<Entity, (With<Hero>, Without<AttackTarget>)>,
+    enemy_query: Query<Entity, With<Enemy>>,
+    mut has_run: Local<bool>,
+) {
+    // Only run once
+    if *has_run {
+        return;
+    }
+    
+    // Check if we have both hero and enemy
+    if let (Ok(hero_entity), Ok(enemy_entity)) = (hero_query.get_single(), enemy_query.get_single()) {
+        info!("Auto-targeting enemy for demo");
+        commands.entity(hero_entity).insert(AttackTarget {
+            entity: enemy_entity,
+        });
+        *has_run = true;
+    }
+}
+
 // Custom enemy selection system that adds AttackTarget to tank_base instead of hero
 fn demo_enemy_selection_system(
     mut commands: Commands,
@@ -240,6 +262,7 @@ fn main() {
                 input::mouse_position_system,
                 input::click_to_move_system,
                 demo_enemy_selection_system,  // Use custom version that adds AttackTarget to hero
+                auto_target_enemy_on_startup,  // Auto-target enemy for demo
                 input::update_target_indicator_system,
                 movement::attack_move_system,
                 propagate_attack_target_system,  // Propagate AttackTarget down hierarchy
@@ -397,7 +420,7 @@ fn setup(
 fn debug_info_system(
     hero_query: Query<(&Transform, Option<&AttackTarget>, Option<&TankMovement>, &Children), With<Hero>>,
     children_query: Query<&Children>,
-    turret_query: Query<(&Transform, &TurretRotation), With<TurretCannon>>,
+    turret_query: Query<(&Transform, &TurretRotation, &TurretCannon), With<TurretCannon>>,
     enemy_query: Query<&Transform, With<Enemy>>,
     mut text_query: Query<&mut Text>,
     zoom_level: Res<ZoomLevel>,
@@ -442,11 +465,33 @@ fn debug_info_system(
                     // Then get children of tank_base (which should include turret_base)
                     if let Ok(tank_children) = children_query.get(tank_base_entity) {
                         for turret_entity in tank_children {
-                            if let Ok((turret_transform, turret_rotation)) = turret_query.get(*turret_entity) {
+                            if let Ok((turret_transform, turret_rotation, turret_cannon)) = turret_query.get(*turret_entity) {
                                 found_turret = true;
                                 status.push_str(&format!("Turret Angle: {:.1}° (Target: {:.1}°)\n",
                                     turret_rotation.current_angle,
                                     turret_rotation.target_angle));
+                                
+                                // Check firing conditions
+                                if let Ok(enemy_transform) = enemy_query.get(attack_target.entity) {
+                                    let hero_pos = Vec2::new(hero_transform.translation.x, hero_transform.translation.z);
+                                    let enemy_pos = Vec2::new(enemy_transform.translation.x, enemy_transform.translation.z);
+                                    let distance = hero_pos.distance(enemy_pos);
+                                    
+                                    status.push_str(&format!("Enemy Distance: {:.1} (Range: 10.0)\n", distance));
+                                    status.push_str(&format!("Fire Rate: {} shots/sec\n", 1.0 / turret_cannon.fire_rate));
+                                    
+                                    if distance > 10.0 {
+                                        status.push_str("Firing Status: OUT OF RANGE\n");
+                                    } else {
+                                        // Check if turret is facing target
+                                        let angle_diff = (turret_rotation.current_angle - turret_rotation.target_angle).abs();
+                                        if angle_diff > 5.0 && angle_diff < 355.0 {
+                                            status.push_str(&format!("Firing Status: ROTATING (diff: {:.1}°)\n", angle_diff.min(360.0 - angle_diff)));
+                                        } else {
+                                            status.push_str("Firing Status: READY TO FIRE\n");
+                                        }
+                                    }
+                                }
                                 
                                 // Calculate if turret is facing target
                                 // Need to calculate global transform through hierarchy
