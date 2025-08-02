@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
-use crate::components::{Hero, Enemy, Projectile, Rocket, TankShell, AttackTarget};
+use crate::components::{Hero, Enemy, Projectile, Rocket, TankShell, AttackTarget, FragmentShell};
 use crate::resources::MouseWorldPosition;
 use crate::rendering;
 use crate::mech::{MechUpperPart, TurretCannon, CannonBarrel, TurretRotation};
@@ -173,6 +173,7 @@ pub fn auto_fire_system(
                                     spawn_position: projectile_spawn_pos,
                                     max_range: TANK_SHELL_RANGE,
                                 },
+                                FragmentShell,  // Mark as fragment shell
                                 PbrBundle {
                                     mesh: shell_mesh,
                                     material: shell_material,
