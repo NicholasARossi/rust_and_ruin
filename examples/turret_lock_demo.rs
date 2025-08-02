@@ -6,27 +6,30 @@ use rust_and_ruin::components::*;
 use rust_and_ruin::systems::*;
 use rust_and_ruin::resources::*;
 use rust_and_ruin::systems::attack_target_propagation::propagate_attack_target_system;
+use rand::Rng;
 
-// Auto-target the enemy on startup for demo purposes
-fn auto_target_enemy_on_startup(
-    mut commands: Commands,
-    hero_query: Query<Entity, (With<Hero>, Without<AttackTarget>)>,
-    enemy_query: Query<Entity, With<Enemy>>,
-    mut has_run: Local<bool>,
-) {
-    // Only run once
-    if *has_run {
-        return;
+// Resource to signal enemy destruction and request respawn
+#[derive(Resource)]
+struct EnemyRespawnRequest {
+    should_respawn: bool,
+    respawn_timer: Timer,
+}
+
+impl Default for EnemyRespawnRequest {
+    fn default() -> Self {
+        Self {
+            should_respawn: false,
+            respawn_timer: Timer::from_seconds(2.0, TimerMode::Once),
+        }
     }
-    
-    // Check if we have both hero and enemy
-    if let (Ok(hero_entity), Ok(enemy_entity)) = (hero_query.get_single(), enemy_query.get_single()) {
-        info!("Auto-targeting enemy for demo");
-        commands.entity(hero_entity).insert(AttackTarget {
-            entity: enemy_entity,
-        });
-        *has_run = true;
-    }
+}
+
+// Enum for enemy shapes
+#[derive(Clone, Copy)]
+enum EnemyShape {
+    Sphere,
+    Cube,
+    Cone,
 }
 
 // Custom enemy selection system that adds AttackTarget to tank_base instead of hero
@@ -174,6 +177,124 @@ fn spawn_mech(
     mech_entity
 }
 
+// Clear attack targets when the targeted enemy no longer exists
+fn clear_invalid_attack_targets_system(
+    mut commands: Commands,
+    enemy_query: Query<Entity, With<Enemy>>,
+    attack_target_query: Query<(Entity, &AttackTarget)>,
+    indicator_query: Query<(Entity, &TargetIndicator)>,
+) {
+    for (entity, attack_target) in attack_target_query.iter() {
+        // Check if the target entity still exists as an enemy
+        if enemy_query.get(attack_target.entity).is_err() {
+            // Enemy no longer exists, remove the attack target
+            commands.entity(entity).remove::<AttackTarget>();
+            
+            // Also remove any target indicators for this enemy
+            for (indicator_entity, indicator) in indicator_query.iter() {
+                if indicator.target == attack_target.entity {
+                    commands.entity(indicator_entity).despawn();
+                }
+            }
+        }
+    }
+}
+
+// Monitor enemy health and request respawn when destroyed
+fn enemy_health_monitor_system(
+    time: Res<Time>,
+    enemy_query: Query<Entity, With<Enemy>>,
+    mut respawn_request: ResMut<EnemyRespawnRequest>,
+) {
+    // If no enemies exist at all, start the respawn timer
+    if enemy_query.iter().count() == 0 && !respawn_request.should_respawn {
+        respawn_request.respawn_timer.reset();
+        respawn_request.should_respawn = true;
+    }
+    
+    // Tick the timer
+    if respawn_request.should_respawn {
+        respawn_request.respawn_timer.tick(time.delta());
+    }
+}
+
+// Respawn enemies with random shapes and positions
+fn enemy_respawn_system(
+    mut commands: Commands,
+    mut respawn_request: ResMut<EnemyRespawnRequest>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    if !respawn_request.should_respawn || !respawn_request.respawn_timer.finished() {
+        return;
+    }
+    
+    respawn_request.should_respawn = false;
+    
+    let mut rng = rand::thread_rng();
+    
+    // Random position within bounds
+    let x = rng.gen_range(-15.0..15.0);
+    let z = rng.gen_range(-15.0..15.0);
+    let position = Vec3::new(x, 0.75, z);
+    
+    // Random shape
+    let shape = match rng.gen_range(0..3) {
+        0 => EnemyShape::Sphere,
+        1 => EnemyShape::Cube,
+        _ => EnemyShape::Cone,
+    };
+    
+    // Create mesh based on shape
+    let mesh = match shape {
+        EnemyShape::Sphere => meshes.add(shape::UVSphere {
+            radius: 0.75,
+            sectors: 32,
+            stacks: 16,
+        }.into()),
+        EnemyShape::Cube => meshes.add(shape::Box::new(1.5, 1.5, 1.5).into()),
+        EnemyShape::Cone => meshes.add(shape::Torus {
+            radius: 0.75,
+            ring_radius: 0.35,
+            subdivisions_segments: 32,
+            subdivisions_sides: 16,
+        }.into()),
+    };
+    
+    // Spawn new enemy
+    commands.spawn((
+        PbrBundle {
+            mesh,
+            material: materials.add(StandardMaterial {
+                base_color: Color::rgb(1.0, 0.0, 0.0),
+                unlit: true,
+                ..default()
+            }),
+            transform: Transform::from_translation(position),
+            ..default()
+        },
+        Enemy,
+        Health::new(100.0),  // Lower health for quicker gameplay
+        RigidBody::Dynamic,
+        Collider::ball(0.75),  // Keep same collision size for all shapes
+        ColliderMassProperties::Density(10.0),
+        Restitution::coefficient(0.4),
+        Friction::coefficient(0.3),
+        ExternalImpulse::default(),
+        GravityScale(1.0),
+        LockedAxes::ROTATION_LOCKED,
+        ActiveEvents::COLLISION_EVENTS,
+    ));
+    
+    info!("Spawned new enemy with shape {:?} at position {:?}", 
+          match shape {
+              EnemyShape::Sphere => "Sphere",
+              EnemyShape::Cube => "Cube", 
+              EnemyShape::Cone => "Cone",
+          }, 
+          position);
+}
+
 // Zoom control resource
 #[derive(Resource)]
 struct ZoomLevel {
@@ -255,6 +376,7 @@ fn main() {
         .insert_resource(MouseWorldPosition { position: Vec2::ZERO })
         .insert_resource(ClearColor(Color::rgb(0.1, 0.1, 0.1)))
         .init_resource::<ZoomLevel>()
+        .init_resource::<EnemyRespawnRequest>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
             (
@@ -262,7 +384,6 @@ fn main() {
                 input::mouse_position_system,
                 input::click_to_move_system,
                 demo_enemy_selection_system,  // Use custom version that adds AttackTarget to hero
-                auto_target_enemy_on_startup,  // Auto-target enemy for demo
                 input::update_target_indicator_system,
                 movement::attack_move_system,
                 propagate_attack_target_system,  // Propagate AttackTarget down hierarchy
@@ -285,6 +406,9 @@ fn main() {
                 visual_effects::hit_flash_system,
                 visual_effects::fragment_lifetime_system,
                 visual_effects::fragment_visual_fade_system,
+                clear_invalid_attack_targets_system,
+                enemy_health_monitor_system,
+                enemy_respawn_system,
             ).chain(),
             camera_zoom_system,
             debug_info_system,
@@ -380,7 +504,7 @@ fn setup(
             ..default()
         },
         Enemy,
-        Health::new(1000.0),  // High health so it doesn't get destroyed quickly
+        Health::new(100.0),  // Lower health for quicker testing
         RigidBody::Dynamic,  // Will move from impacts
         Collider::ball(0.75),  // Collision shape
         ColliderMassProperties::Density(10.0),  // Heavy but not immovable

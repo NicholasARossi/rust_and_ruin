@@ -150,3 +150,45 @@ We successfully implemented fragment shells as the default tank shell behavior u
 - Modular design allows easy tweaking of fragment behavior
 - TDD approach ensures reliable physics calculations
 - Reusable pattern for other fragmenting projectiles
+
+## Turret Lock Demo Updates Review
+
+### Summary of Changes
+
+Successfully updated the turret lock demo to require manual targeting and implement enemy respawning with random shapes and positions.
+
+#### 1. Removed Auto-Targeting
+- Removed `auto_target_enemy_on_startup` function completely
+- Players must now press Q near an enemy to lock the turret
+- Promotes more interactive gameplay
+
+#### 2. Enemy Respawn System
+- Created `EnemyRespawnRequest` resource with 2-second respawn timer
+- `enemy_health_monitor_system` detects when no enemies exist
+- `enemy_respawn_system` spawns new enemies after timer expires
+
+#### 3. Random Enemy Variety
+- Three enemy shapes implemented:
+  - Sphere (original shape)
+  - Cube (1.5x1.5x1.5 box)
+  - Torus (used as "cone" substitute)
+- Random spawn positions within -15 to 15 units on X/Z axes
+- All enemies maintain same collision radius for consistent gameplay
+
+#### 4. Improved Gameplay Loop
+- Reduced enemy health from 1000 to 100 for quicker destruction
+- 2-second delay between enemy destruction and respawn
+- Q key targeting works with all enemy shapes
+- Enemies spawn at correct height (0.75) for projectile collision
+
+### Technical Implementation
+- Added `rand` crate dependency for randomization
+- Respawn systems integrated into main update loop
+- Timer-based respawn prevents instant enemy appearance
+- Maintained backward compatibility with existing targeting system
+
+### Benefits
+- More engaging demo with continuous action
+- Visual variety with different enemy shapes
+- Tests targeting system with multiple enemy types
+- Demonstrates respawn mechanics for future game features
