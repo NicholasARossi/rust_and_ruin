@@ -61,6 +61,18 @@ pub struct TankShell {
 }
 
 #[derive(Component)]
+pub struct FragmentShell;
+
+#[derive(Component)]
+pub struct ShellFragment {
+    pub parent_velocity: Vec2,
+    pub lifetime: Timer,
+    pub max_distance: f32,
+    pub spawn_position: Vec2,
+    pub fragment_index: u8,
+}
+
+#[derive(Component)]
 pub struct HitFlash {
     pub timer: Timer,
 }

@@ -9,6 +9,7 @@ pub mod visual_effects;
 pub mod mech_movement;
 pub mod upper_body_control;
 pub mod weapon_control;
+pub mod attack_target_propagation;
 
 pub use collision::*;
 pub use input::*;
@@ -21,3 +22,4 @@ pub use visual_effects::*;
 pub use mech_movement::*;
 pub use upper_body_control::*;
 pub use weapon_control::*;
+pub use attack_target_propagation::*;

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
-use crate::components::{Hero, Enemy, Projectile, Rocket, TankShell, AttackTarget};
+use crate::components::{Hero, Enemy, Projectile, Rocket, TankShell, AttackTarget, FragmentShell};
 use crate::resources::MouseWorldPosition;
 use crate::rendering;
 use crate::mech::{MechUpperPart, TurretCannon, CannonBarrel, TurretRotation};
@@ -119,87 +119,96 @@ pub fn rocket_acceleration_system(
 pub fn auto_fire_system(
     mut commands: Commands,
     time: Res<Time>,
-    hero_query: Query<(&Transform, &Children, &AttackTarget), With<Hero>>,
-    upper_query: Query<(&Transform, &TurretCannon, &TurretRotation, Option<&Children>), With<MechUpperPart>>,
+    upper_query: Query<(&Transform, &GlobalTransform, &TurretCannon, &TurretRotation, &AttackTarget, Option<&Children>), With<MechUpperPart>>,
     enemy_query: Query<&Transform, With<Enemy>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut last_fire_time: Local<f32>,
+    mut last_fire_time: Local<Option<f32>>,
 ) {
-    *last_fire_time += time.delta_seconds();
+    // Initialize on first run to allow immediate firing
+    if last_fire_time.is_none() {
+        *last_fire_time = Some(999.0); // High value to allow immediate first shot
+    }
     
-    for (hero_transform, children, attack_target) in hero_query.iter() {
+    let fire_time = last_fire_time.as_mut().unwrap();
+    *fire_time += time.delta_seconds();
+    
+    // Debug: Check if we have any turrets with attack targets (commented out to reduce noise)
+    // let turret_count = upper_query.iter().count();
+    // if turret_count == 0 {
+    //     info!("Auto-fire: No turrets with attack targets found!");
+    //     return;
+    // }
+    
+    for (upper_transform, global_transform, turret_cannon, turret_rotation, attack_target, _upper_children) in upper_query.iter() {
         if let Ok(enemy_transform) = enemy_query.get(attack_target.entity) {
-            let hero_pos = Vec2::new(hero_transform.translation.x, hero_transform.translation.z);
+            let turret_pos = Vec2::new(global_transform.translation().x, global_transform.translation().z);
             let enemy_pos = Vec2::new(enemy_transform.translation.x, enemy_transform.translation.z);
-            let distance = hero_pos.distance(enemy_pos);
+            let distance = turret_pos.distance(enemy_pos);
             
-            // info!("Auto-fire check: hero_pos={:?}, enemy_pos={:?}, distance={:.2}, range={:.2}, time={:.2}, fire_rate={}", 
-            //       hero_pos, enemy_pos, distance, ATTACK_RANGE, *last_fire_time, 1.0);
+            // info!("Auto-fire check: turret_pos={:?}, enemy_pos={:?}, distance={:.2}, range={:.2}, time={:.2}", 
+            //       turret_pos, enemy_pos, distance, ATTACK_RANGE, *fire_time);
             
             // Check if enemy is in range
             if distance <= ATTACK_RANGE {
-                // info!("Enemy in range! Checking {} children for turret", children.len());
-                for child in children {
-                    if let Ok((upper_transform, turret_cannon, _turret_rotation, _upper_children)) = upper_query.get(*child) {
-                        // info!("Found turret child!");
-                        // Check if turret is actually facing the target (within tolerance)
-                        let global_upper_transform = hero_transform.mul_transform(*upper_transform);
-                        let turret_position = Vec2::new(global_upper_transform.translation.x, global_upper_transform.translation.z);
-                        // Use global transform for facing check
-                        let is_facing = is_turret_facing_target(&global_upper_transform, turret_position, enemy_pos, ANGLE_TOLERANCE);
-                        
-                        // info!("Turret facing check: turret_pos={:?}, enemy_pos={:?}, is_facing={}, tolerance={:.2} degrees, fire_rate={}, time_since_last_fire={}", 
-                        //       turret_position, enemy_pos, is_facing, ANGLE_TOLERANCE, turret_cannon.fire_rate, *last_fire_time);
-                        
-                        if is_facing && *last_fire_time >= turret_cannon.fire_rate {
-                            // Fire projectile
-                            let spawn_pos_3d = get_barrel_tip_position(&global_upper_transform, turret_cannon.barrel_length);
-                            let projectile_spawn_pos = Vec2::new(spawn_pos_3d.x, spawn_pos_3d.z);
-                            
-                            let direction = (enemy_pos - projectile_spawn_pos).normalize();
-                            let shell_velocity = direction * TANK_SHELL_SPEED;
-                            
-                            let shell_mesh = meshes.add(Mesh::from(shape::Box::new(0.4, 0.2, 0.4)));  // 3D box shape
-                            let shell_material = materials.add(Color::rgb(1.0, 1.0, 0.0).into());  // Bright yellow
-                            
-                            commands.spawn((
-                                Projectile {
-                                    damage: turret_cannon.projectile_damage,
-                                    speed: TANK_SHELL_SPEED,
-                                },
-                                TankShell {
-                                    velocity: shell_velocity,
-                                    spawn_position: projectile_spawn_pos,
-                                    max_range: TANK_SHELL_RANGE,
-                                },
-                                PbrBundle {
-                                    mesh: shell_mesh,
-                                    material: shell_material,
-                                    transform: Transform::from_xyz(projectile_spawn_pos.x, 0.75, projectile_spawn_pos.y),  // Y=0.75 for 3D physics at enemy height
-                                    ..default()
-                                },
-                                RigidBody::Dynamic,
-                                Collider::ball(0.2),  // Increased from 0.05 for better collision detection
-                                ColliderMassProperties::Density(10.0),  // Heavy shells
-                                Restitution::coefficient(0.4),  // Some bounce
-                                Friction::coefficient(0.3),
-                                Ccd::enabled(),  // Continuous collision detection for fast projectiles
-                                Velocity {
-                                    linvel: Vec3::new(shell_velocity.x, 0.0, shell_velocity.y),  // Convert 2D velocity to 3D
-                                    angvel: Vec3::ZERO,
-                                },
-                                ExternalImpulse::default(),
-                                GravityScale(0.3),  // Slight gravity for realistic arc
-                                ActiveEvents::COLLISION_EVENTS
-                            ));
-                            
-                            info!("Tank shell spawned at 3D pos ({}, {}, {}) with velocity {:?}", 
-                                  projectile_spawn_pos.x, 0.75, projectile_spawn_pos.y, shell_velocity);
-                            *last_fire_time = 0.0;
-                        }
-                        break;
-                    }
+                // info!("Enemy in range! Fire rate: {}, current_angle: {:.1}°, target_angle: {:.1}°", 
+                //       turret_cannon.fire_rate, turret_rotation.current_angle, turret_rotation.target_angle);
+                
+                // Check if turret is actually facing the target (within tolerance)
+                // Convert GlobalTransform to Transform for the facing check
+                let (_, rotation, translation) = global_transform.to_scale_rotation_translation();
+                let world_transform = Transform::from_translation(translation).with_rotation(rotation);
+                let is_facing = is_turret_facing_target(&world_transform, turret_pos, enemy_pos, ANGLE_TOLERANCE);
+                
+                // info!("Turret facing check: turret_pos={:?}, enemy_pos={:?}, is_facing={}, tolerance={:.2} degrees, time_since_last_fire={:.2}", 
+                //       turret_pos, enemy_pos, is_facing, ANGLE_TOLERANCE, *fire_time);
+                
+                if is_facing && *fire_time >= turret_cannon.fire_rate {
+                    // Fire projectile
+                    let spawn_pos_3d = get_barrel_tip_position(&world_transform, turret_cannon.barrel_length);
+                    let projectile_spawn_pos = Vec2::new(spawn_pos_3d.x, spawn_pos_3d.z);
+                    
+                    let direction = (enemy_pos - projectile_spawn_pos).normalize();
+                    let shell_velocity = direction * TANK_SHELL_SPEED;
+                    
+                    let shell_mesh = meshes.add(Mesh::from(shape::Box::new(0.4, 0.2, 0.4)));  // 3D box shape
+                    let shell_material = materials.add(Color::rgb(1.0, 1.0, 0.0).into());  // Bright yellow
+                    
+                    commands.spawn((
+                        Projectile {
+                            damage: turret_cannon.projectile_damage,
+                            speed: TANK_SHELL_SPEED,
+                        },
+                        TankShell {
+                            velocity: shell_velocity,
+                            spawn_position: projectile_spawn_pos,
+                            max_range: TANK_SHELL_RANGE,
+                        },
+                        FragmentShell,  // Mark as fragment shell
+                        PbrBundle {
+                            mesh: shell_mesh,
+                            material: shell_material,
+                            transform: Transform::from_xyz(projectile_spawn_pos.x, 0.75, projectile_spawn_pos.y),  // Y=0.75 for 3D physics at enemy height
+                            ..default()
+                        },
+                        RigidBody::Dynamic,
+                        Collider::ball(0.2),  // Increased from 0.05 for better collision detection
+                        ColliderMassProperties::Density(10.0),  // Heavy shells
+                        Restitution::coefficient(0.4),  // Some bounce
+                        Friction::coefficient(0.3),
+                        Ccd::enabled(),  // Continuous collision detection for fast projectiles
+                        Velocity {
+                            linvel: Vec3::new(shell_velocity.x, 0.0, shell_velocity.y),  // Convert 2D velocity to 3D
+                            angvel: Vec3::ZERO,
+                        },
+                        ExternalImpulse::default(),
+                        GravityScale(0.3),  // Slight gravity for realistic arc
+                        ActiveEvents::COLLISION_EVENTS
+                    ));
+                    
+                    info!("Tank shell spawned at 3D pos ({}, {}, {}) with velocity {:?}", 
+                          projectile_spawn_pos.x, 0.75, projectile_spawn_pos.y, shell_velocity);
+                    *fire_time = 0.0;
                 }
             }
         }

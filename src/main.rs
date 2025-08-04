@@ -34,6 +34,7 @@ fn main() {
             enemy_selection_system,
             update_target_indicator_system,
             attack_move_system,
+            propagate_attack_target_system,  // Propagate AttackTarget down hierarchy
             turret_control_system,
             // spawn_projectile_system, // Disabled - using auto_fire_system instead
             auto_fire_system,
@@ -45,6 +46,8 @@ fn main() {
             tank_shell_lifetime_system,
             collision_detection_system,
             hit_flash_system,
+            fragment_lifetime_system,
+            fragment_visual_fade_system,
         ))
         .run();
 }

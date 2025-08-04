@@ -46,7 +46,7 @@ pub fn rotate_towards_angle(
 pub fn turret_control_system(
     mut set: ParamSet<(
         Query<(&mut Transform, &GlobalTransform, &mut TurretRotation, &TurretCannon, &Parent)>,
-        Query<(&Transform, Option<&AttackTarget>), Without<TurretRotation>>,
+        Query<(&Transform, &GlobalTransform, Option<&AttackTarget>), Without<TurretRotation>>,
         Query<&Transform, With<Enemy>>,
     )>,
     mouse_position: Res<MouseWorldPosition>,
@@ -76,10 +76,10 @@ pub fn turret_control_system(
     let mut parent_data = Vec::new();
     for (entity_index, parent_entity, current_angle, _, rotation_speed, turret_position) in &turret_data {
         // Get parent transform and attack target
-        if let Ok((transform, attack_target)) = set.p1().get(*parent_entity) {
+        if let Ok((transform, global_transform, attack_target)) = set.p1().get(*parent_entity) {
             let attack_entity = attack_target.map(|at| at.entity);
-            // Extract the parent's Y rotation (first component in YXZ order)
-            let (parent_y_rotation, _, _) = transform.rotation.to_euler(EulerRot::YXZ);
+            // Extract the parent's world Y rotation from GlobalTransform
+            let (parent_y_rotation, _, _) = global_transform.to_scale_rotation_translation().1.to_euler(EulerRot::YXZ);
             parent_data.push((*entity_index, *turret_position, attack_entity, *current_angle, *rotation_speed, parent_y_rotation));
         }
     }
